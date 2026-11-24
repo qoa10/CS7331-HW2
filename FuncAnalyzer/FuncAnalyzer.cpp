@@ -120,5 +120,9 @@ int main(int argc, const char **argv) {
   auto op = CommonOptionsParser::create(argc, argv, MyToolCategory);
   if (!op) { llvm::errs() << llvm::toString(op.takeError()) << "\n"; return 1; }
   ClangTool Tool(op->getCompilations(), op->getSourcePathList());
+  Tool.appendArgumentsAdjuster(getInsertArgumentAdjuster(
+      "-resource-dir=" CLANG_RESOURCE_DIR,
+      ArgumentInsertPosition::BEGIN));
+
   return Tool.run(newFrontendActionFactory<FuncAnalysisFrontendAction>().get());
 }

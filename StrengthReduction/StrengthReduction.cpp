@@ -42,6 +42,8 @@ public:
     const Expr *value = B->getLHS();
     const Expr *constant = B->getRHS();
     auto power = [&](const Expr *E, unsigned &shift) {
+      if (!isa<IntegerLiteral>(E->IgnoreParenImpCasts()))
+        return false;
       Expr::EvalResult R;
       if (!E->EvaluateAsInt(R, Context) || E->HasSideEffects(Context)) return false;
       const auto &N = R.Val.getInt();
@@ -55,9 +57,11 @@ public:
       swap(value, constant);
     }
     if (shift == 0) return true;
-    // Signed division truncates toward zero, unlike right shift of negatives.
-    if (B->getOpcode() == BO_Div && B->getType()->isSignedIntegerType() &&
-        !nonnegative(value)) return true;
+    bool signedResult = B->getType()->isSignedIntegerType();
+    bool needsCorrection = signedResult && !nonnegative(value);
+
+    if (B->getOpcode() == BO_Div && needsCorrection &&
+        value->HasSideEffects(Context)) return true;
     auto range = CharSourceRange::getTokenRange(B->getSourceRange());
     auto operandRange = CharSourceRange::getTokenRange(value->IgnoreParenImpCasts()->getSourceRange());
     bool invalid = false;
@@ -78,6 +82,21 @@ public:
     string replacement = "(" + text +
                          (B->getOpcode() == BO_Mul ? " << " : " >> ") +
                          to_string(shift) + ")";
+    if (needsCorrection) {
+      if (B->getOpcode() == BO_Mul) {
+        QualType unsignedType =
+            Context.getCorrespondingUnsignedType(B->getType());
+        replacement = "((" + type + ")((" +
+            unsignedType.getAsString() + ")(" + text + ") << " +
+            to_string(shift) + "))";
+      } else {
+        string mask = "(((" + type + ")1 << " +
+            to_string(shift) + ") - 1)";
+        replacement = "((" + text + " + ((" + text +
+            " < 0) ? " + mask + " : 0)) >> " +
+            to_string(shift) + ")";
+      }
+    }
     edits.push_back({range, replacement, SM.getFileOffset(B->getBeginLoc()), SM.getFileOffset(end)});
     return true;
   }
@@ -123,5 +142,9 @@ int main(int argc, const char **argv) {
   auto op = CommonOptionsParser::create(argc, argv, MyToolCategory);
   if (!op) { llvm::errs() << llvm::toString(op.takeError()) << "\n"; return 1; }
   ClangTool Tool(op->getCompilations(), op->getSourcePathList());
+  Tool.appendArgumentsAdjuster(getInsertArgumentAdjuster(
+      "-resource-dir=" CLANG_RESOURCE_DIR,
+      ArgumentInsertPosition::BEGIN));
+
   return Tool.run(newFrontendActionFactory<StrengthReductionFrontendAction>().get());
 }

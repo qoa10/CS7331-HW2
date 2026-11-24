@@ -4,11 +4,26 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 find_package(LLVM REQUIRED CONFIG)
 find_package(Clang REQUIRED CONFIG)
+execute_process(
+  COMMAND "${LLVM_TOOLS_BINARY_DIR}/clang" -print-resource-dir
+  OUTPUT_VARIABLE CLANG_RESOURCE_DIR
+  OUTPUT_STRIP_TRAILING_WHITESPACE
+  RESULT_VARIABLE RESOURCE_STATUS
+)
+if(NOT RESOURCE_STATUS EQUAL 0 OR
+   NOT EXISTS "${CLANG_RESOURCE_DIR}/include/stddef.h")
+  message(FATAL_ERROR "Cannot locate Clang resource headers")
+endif()
+message(STATUS "Clang resource directory: ${CLANG_RESOURCE_DIR}")
+
 include_directories(SYSTEM ${LLVM_INCLUDE_DIRS} ${CLANG_INCLUDE_DIRS})
 add_definitions(${LLVM_DEFINITIONS})
 add_executable(func-analyzer FuncAnalyzer/FuncAnalyzer.cpp)
 add_executable(strength-reduction StrengthReduction/StrengthReduction.cpp)
 foreach(tool func-analyzer strength-reduction)
+  target_compile_definitions(${tool}
+    PRIVATE CLANG_RESOURCE_DIR="${CLANG_RESOURCE_DIR}")
+
   if(NOT LLVM_ENABLE_RTTI)
     target_compile_options(${tool} PRIVATE -fno-rtti)
   endif()
