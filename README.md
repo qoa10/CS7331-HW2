@@ -39,6 +39,9 @@ definition in the main source file:
 
 Function identity is determined using canonical declarations.
 Statement counts exclude compound blocks and expression subtrees.
+Declarations (including loop initializers), control statements
+and expressions used as statements (for example `x = 1;`) each
+count as one statement.
 Loop counts include for, while, do-while and range-based for loops.
 
 ### Example Output
@@ -101,6 +104,18 @@ int multiply(int x) { return x * 4; }
 /* After */
 int multiply(int x) {
     return ((int)((unsigned int)(x) << 2));
+}
+```
+
+Signed division example:
+
+```c
+/* Before */
+int divide(int x) { return x / 2; }
+
+/* After */
+int divide(int x) {
+    return ((x + ((x < 0) ? (((int)1 << 1) - 1) : 0)) >> 1);
 }
 ```
 
